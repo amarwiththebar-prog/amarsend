@@ -32,8 +32,8 @@ class AboutPage extends StatelessWidget {
         children: [
           const SizedBox(height: 20),
           const LocalSendLogo(withText: true),
-          Text(
-            '© ${DateTime.now().year} Tien Do Nam',
+          const Text(
+            'AmarSend is a personal fork of LocalSend.\nLocalSend © Tien Do Nam, licensed under Apache 2.0.',
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 10),
