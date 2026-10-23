@@ -77,7 +77,7 @@ Future<List<String>> _readPeerIps() async {
 
 /// Extracts the IPv4 addresses of online peers from `tailscale status --json`.
 List<String> parseTailscalePeerIps(String json) {
-  final Object? decoded;
+  Object? decoded;
   try {
     decoded = jsonDecode(json);
   } catch (_) {
