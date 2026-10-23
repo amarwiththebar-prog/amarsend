@@ -107,13 +107,22 @@ jobs:
       - name: Package
         working-directory: app
         run: |
-          $out = 'build/windows/arm64/runner/Release'
+          # Find the build output wherever this Flutter version puts it.
+          $exe = Get-ChildItem build/windows -Recurse -Filter localsend_app.exe | Where-Object { $_.FullName -match '\\Release\\' } | Select-Object -First 1
+          if (-not $exe) { Write-Error "localsend_app.exe not found"; Get-ChildItem build/windows -Recurse -Filter *.exe | Select-Object FullName; exit 1 }
+          $out = $exe.DirectoryName
+          Write-Host "Packaging $out"
           echo {} > "$out/settings.json"
-          $crt = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Redist\MSVC\*\arm64\Microsoft.VC143.CRT' | Select-Object -Last 1
-          Copy-Item "$($crt.FullName)\msvcp140.dll" $out/
-          Copy-Item "$($crt.FullName)\vcruntime140.dll" $out/
-          Copy-Item "$($crt.FullName)\vcruntime140_1.dll" $out/
-          Remove-Item "$out/localsend_msix_helper.msix", "$out/install_msix_helper.ps1", "$out/localsend_app.exe.manifest"
+          # Bundle the ARM64 C++ runtime if Visual Studio has it (any version); Windows 11 ARM usually has it already.
+          $crt = Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\arm64\Microsoft.VC*.CRT' -ErrorAction SilentlyContinue | Select-Object -Last 1
+          if ($crt) {
+            foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+              if (Test-Path "$($crt.FullName)\$dll") { Copy-Item "$($crt.FullName)\$dll" $out/ }
+            }
+          } else {
+            Write-Warning "ARM64 C++ runtime not found; skipping"
+          }
+          Remove-Item "$out/localsend_msix_helper.msix", "$out/install_msix_helper.ps1", "$out/localsend_app.exe.manifest" -ErrorAction SilentlyContinue
           Rename-Item "$out/localsend_app.exe" "AmarSend.exe"
           Compress-Archive -Path "$out/*" -DestinationPath AmarSend-windows-arm64.zip
 
