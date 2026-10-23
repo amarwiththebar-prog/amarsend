@@ -29,12 +29,9 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
-      # Required by the CMake install step (app/windows/CMakeLists.txt); removed from the zip afterwards.
-      - name: Build MSIX helper
-        run: |
-          $makepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' | Select-Object -Last 1
-          & $makepri.FullName new /pr support\build\msix\content /cf support\build\msix\priconfig.xml /mn support\build\msix\content\AppxManifest.xml /of support\build\msix\content\resources.pri /o
-          & 'C:\Program Files (x86)\Windows Kits\10\App Certification Kit\makeappx.exe' pack /o /d support\build\msix\content /nv /p app\windows\localsend_msix_helper.msix
+      # CMake installs this file; AmarSend's zip doesn't use it, so an empty placeholder is enough.
+      - name: MSIX helper placeholder
+        run: New-Item -ItemType File -Force app\windows\localsend_msix_helper.msix | Out-Null
 
       - name: Dependencies
         working-directory: app
@@ -95,13 +92,9 @@ jobs:
             exit 1
           }
 
-      - name: Build MSIX helper
-        run: |
-          $manifest = 'support\build\msix\content\AppxManifest.xml'
-          (Get-Content $manifest) -replace 'ProcessorArchitecture="x64"', 'ProcessorArchitecture="arm64"' | Set-Content $manifest
-          $makepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' | Select-Object -Last 1
-          & $makepri.FullName new /pr support\build\msix\content /cf support\build\msix\priconfig.xml /mn support\build\msix\content\AppxManifest.xml /of support\build\msix\content\resources.pri /o
-          & 'C:\Program Files (x86)\Windows Kits\10\App Certification Kit\makeappx.exe' pack /o /d support\build\msix\content /nv /p app\windows\localsend_msix_helper.msix
+      # CMake installs this file; AmarSend's zip doesn't use it, so an empty placeholder is enough.
+      - name: MSIX helper placeholder
+        run: New-Item -ItemType File -Force app\windows\localsend_msix_helper.msix | Out-Null
 
       - name: Dependencies
         working-directory: app
