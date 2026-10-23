@@ -1,0 +1,189 @@
+name: Build AmarSend
+
+# Runs on every push to main, or by hand from the Actions tab ("Run workflow").
+# When all builds succeed, the apps are published on the Releases page
+# under "AmarSend (latest build)".
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+jobs:
+  windows-x64:
+    name: Windows (x64)
+    runs-on: windows-latest
+    env:
+      FLUTTER_VERSION: "3.41.9"
+    steps:
+      - name: Fix long file paths
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      # Required by the CMake install step (app/windows/CMakeLists.txt); removed from the zip afterwards.
+      - name: Build MSIX helper
+        run: |
+          $makepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' | Select-Object -Last 1
+          & $makepri.FullName new /pr support\build\msix\content /cf support\build\msix\priconfig.xml /mn support\build\msix\content\AppxManifest.xml /of support\build\msix\content\resources.pri /o
+          & 'C:\Program Files (x86)\Windows Kits\10\App Certification Kit\makeappx.exe' pack /o /d support\build\msix\content /nv /p app\windows\localsend_msix_helper.msix
+
+      - name: Dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: AmarSend tests
+        working-directory: app
+        run: flutter test test/unit/util/tailscale_helper_test.dart
+
+      - name: Compile
+        working-directory: app
+        run: flutter build windows
+
+      - name: Package
+        working-directory: app
+        run: |
+          $out = 'build/windows/x64/runner/Release'
+          echo {} > "$out/settings.json"
+          Copy-Item ../support/build/windows/x64/msvcp140.dll $out/
+          Copy-Item ../support/build/windows/x64/vcruntime140.dll $out/
+          Copy-Item ../support/build/windows/x64/vcruntime140_1.dll $out/
+          Remove-Item "$out/localsend_msix_helper.msix", "$out/install_msix_helper.ps1", "$out/localsend_app.exe.manifest"
+          Rename-Item "$out/localsend_app.exe" "AmarSend.exe"
+          Compress-Archive -Path "$out/*" -DestinationPath AmarSend-windows-x64.zip
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-x64
+          path: app/AmarSend-windows-x64.zip
+          if-no-files-found: error
+
+  windows-arm64:
+    name: Windows (ARM64)
+    # Free for public repositories.
+    runs-on: windows-11-arm
+    env:
+      # Windows ARM64 needs Flutter 3.47+
+      FLUTTER_VERSION: "3.47.4"
+    steps:
+      - name: Fix long file paths
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v6
+
+      # Flutter doesn't ship Windows ARM64 SDK downloads, so clone it from GitHub.
+      - name: Setup Flutter SDK
+        run: |
+          git clone --depth 1 --branch ${{ env.FLUTTER_VERSION }} https://github.com/flutter/flutter.git $env:USERPROFILE\flutter
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\flutter\bin"
+          & "$env:USERPROFILE\flutter\bin\flutter.bat" --version
+
+      - name: Verify native arm64 toolchain
+        run: |
+          $dartVersion = & "$env:USERPROFILE\flutter\bin\dart.bat" --version 2>&1 | Out-String
+          Write-Host $dartVersion
+          if ($dartVersion -notmatch 'windows_arm64') {
+            Write-Error "Dart SDK is not windows_arm64 - Flutter fell back to x64"
+            exit 1
+          }
+
+      - name: Build MSIX helper
+        run: |
+          $manifest = 'support\build\msix\content\AppxManifest.xml'
+          (Get-Content $manifest) -replace 'ProcessorArchitecture="x64"', 'ProcessorArchitecture="arm64"' | Set-Content $manifest
+          $makepri = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\10.*\x64\makepri.exe' | Select-Object -Last 1
+          & $makepri.FullName new /pr support\build\msix\content /cf support\build\msix\priconfig.xml /mn support\build\msix\content\AppxManifest.xml /of support\build\msix\content\resources.pri /o
+          & 'C:\Program Files (x86)\Windows Kits\10\App Certification Kit\makeappx.exe' pack /o /d support\build\msix\content /nv /p app\windows\localsend_msix_helper.msix
+
+      - name: Dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Compile
+        working-directory: app
+        run: flutter build windows
+
+      - name: Package
+        working-directory: app
+        run: |
+          $out = 'build/windows/arm64/runner/Release'
+          echo {} > "$out/settings.json"
+          $crt = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Redist\MSVC\*\arm64\Microsoft.VC143.CRT' | Select-Object -Last 1
+          Copy-Item "$($crt.FullName)\msvcp140.dll" $out/
+          Copy-Item "$($crt.FullName)\vcruntime140.dll" $out/
+          Copy-Item "$($crt.FullName)\vcruntime140_1.dll" $out/
+          Remove-Item "$out/localsend_msix_helper.msix", "$out/install_msix_helper.ps1", "$out/localsend_app.exe.manifest"
+          Rename-Item "$out/localsend_app.exe" "AmarSend.exe"
+          Compress-Archive -Path "$out/*" -DestinationPath AmarSend-windows-arm64.zip
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-arm64
+          path: app/AmarSend-windows-arm64.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: macos-latest
+    env:
+      FLUTTER_VERSION: "3.41.9"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+
+      - name: Dependencies
+        working-directory: app
+        run: flutter pub get
+
+      # Ad-hoc signed (no Apple developer account), see macos/Runner.xcodeproj.
+      - name: Compile
+        working-directory: app
+        run: flutter build macos --release
+
+      - name: Package
+        working-directory: app
+        run: |
+          APP=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -1)
+          echo "Built $APP"
+          ditto -c -k --keepParent "$APP" AmarSend-macos.zip
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: macos
+          path: app/AmarSend-macos.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish to Releases
+    needs: [windows-x64, windows-arm64, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Replace the "latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest dist/*.zip \
+            --target "${{ github.sha }}" \
+            --title "AmarSend (latest build)" \
+            --notes "Built from ${{ github.sha }}. Windows: pick x64 or arm64 to match your PC. Mac: unzip, then right-click AmarSend > Open the first time."
