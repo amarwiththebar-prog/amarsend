@@ -4,6 +4,7 @@ import 'package:localsend_app/provider/favorites_provider.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/util/native/tailscale_helper.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 /// Discovers devices in stages, cheapest first: multicast announcement and
@@ -20,11 +21,20 @@ class StartSmartScan extends AsyncGlobalAction {
     final settings = ref.read(settingsProvider);
     final networkInterfaces = ref.read(localIpProvider).localIps.take(maxInterfaces).toList();
 
+    // AmarSend: also probe devices on the user's Tailscale network, so friends
+    // show up even when the Wi-Fi blocks devices from seeing each other.
+    final favoriteIps = favorites.map((f) => f.ip).toSet();
+    final tailscaleTargets = <(String, int)>[
+      for (final ip in await getTailscalePeerIps())
+        if (!favoriteIps.contains(ip)) (ip, settings.port),
+    ];
+
     await ref
         .redux(nearbyDevicesProvider)
         .dispatchAsync(
           StartStagedScan(
             favorites: favorites,
+            extraTargets: tailscaleTargets,
             interfaces: networkInterfaces,
             port: settings.port,
             https: settings.https,

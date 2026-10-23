@@ -195,6 +195,10 @@ class StartLegacyScan extends AsyncReduxAction<NearbyDevicesService, NearbyDevic
 /// This method awaits until every stage is finished.
 class StartStagedScan extends AsyncReduxAction<NearbyDevicesService, NearbyDevicesState> {
   final List<FavoriteDevice> favorites;
+
+  /// AmarSend: extra addresses probed right away, like favorites
+  /// (e.g. Tailscale peers when local discovery is blocked).
+  final List<(String, int)> extraTargets;
   final List<String> interfaces;
   final int port;
   final bool https;
@@ -202,6 +206,7 @@ class StartStagedScan extends AsyncReduxAction<NearbyDevicesService, NearbyDevic
 
   StartStagedScan({
     required this.favorites,
+    this.extraTargets = const [],
     required this.interfaces,
     required this.port,
     required this.https,
@@ -217,7 +222,10 @@ class StartStagedScan extends AsyncReduxAction<NearbyDevicesService, NearbyDevic
     await external(notifier._isolateController)
         .dispatchTakeResult(
           IsolateDiscoveryStagedScanAction(
-            favorites: favorites.map((e) => (e.ip, e.port)).toList(),
+            favorites: [
+              ...favorites.map((e) => (e.ip, e.port)),
+              ...extraTargets,
+            ],
             networkInterfaces: interfaces,
             port: port,
             https: https,
